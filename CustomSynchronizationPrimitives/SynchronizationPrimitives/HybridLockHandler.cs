@@ -11,7 +11,6 @@ namespace CustomSynchronizationPrimitives.SynchronizationPrimitives
         {
             if (!Monitor.TryEnter(_locker))
             {
-                //SpinLockEnter();
                 _spinLockHandler.Enter();
             }
         }
@@ -24,7 +23,6 @@ namespace CustomSynchronizationPrimitives.SynchronizationPrimitives
             }
             else
             {
-                //SpinLockExit();
                 _spinLockHandler.Exit();
             }
         }
