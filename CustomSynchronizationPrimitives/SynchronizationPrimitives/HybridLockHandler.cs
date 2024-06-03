@@ -5,61 +5,74 @@ namespace CustomSynchronizationPrimitives.SynchronizationPrimitives
 {
     public class HybridLockHandler
     {
-        private readonly object _locker = new object();
+        private object _locker = new object();
         private SpinLockHandler _spinLockHandler = new SpinLockHandler();
-        private bool _enteredMonitor;
-
+        private bool _enteredLocker;
         public HybridLock Enter()
         {
-            _enteredMonitor = Monitor.TryEnter(_locker);
-            if (!_enteredMonitor)
+            _enteredLocker = _spinLockHandler.TryEnter(100);
+            if (_enteredLocker)
             {
-                _spinLockHandler.Enter();
-            }
-
-            return new HybridLock(this);
-        }
-
-        public void Exit()
-        {
-            if (_enteredMonitor)
-            {
-                Monitor.Exit(_locker);
-                _enteredMonitor = false;
+                return new HybridLock(this, LockType.SpinLock);
             }
             else
             {
+                Monitor.Enter(_locker);
+
+                return new HybridLock(this, LockType.Monitor);
+            }
+        }
+
+        public void Exit(LockType lockType)
+        {
+            if (lockType == LockType.SpinLock)
+            {
                 _spinLockHandler.Exit();
+            }
+            else
+            {
+                Monitor.Exit(_locker);
             }
         }
 
         public HybridLock TryEnter(int timeout)
         {
-            _enteredMonitor = Monitor.TryEnter(_locker, timeout);
-            if (_enteredMonitor)
+            _enteredLocker = _spinLockHandler.TryEnter(timeout);
+            if (_enteredLocker)
             {
-                if (!_spinLockHandler.TryEnter(timeout))
-                {
-                    throw new TimeoutException();
-                }
+                return new HybridLock(this, LockType.SpinLock);
             }
-
-            return new HybridLock(this);
+            else if (Monitor.TryEnter(_locker, timeout))
+            {
+                return new HybridLock(this, LockType.Monitor);
+            }
+            else
+            {
+                throw new TimeoutException();
+            }
         }
 
-        public struct HybridLock : IDisposable
+        public ref struct HybridLock
         {
             private readonly HybridLockHandler _lockHandler;
+            private LockType _lockType;
 
-            public HybridLock(HybridLockHandler lockHandler)
+            public HybridLock(HybridLockHandler lockHandler, LockType lockType)
             {
                 _lockHandler = lockHandler;
+                _lockType = lockType;
             }
 
             public void Dispose()
             {
-                _lockHandler.Exit();
+                _lockHandler.Exit(_lockType);
             }
+        }
+
+        public enum LockType
+        {
+            SpinLock,
+            Monitor
         }
     }
 }
