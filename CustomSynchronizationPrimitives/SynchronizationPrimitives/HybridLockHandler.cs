@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System;
+using System.Threading;
 
 namespace CustomSynchronizationPrimitives.SynchronizationPrimitives
 {
@@ -6,20 +7,25 @@ namespace CustomSynchronizationPrimitives.SynchronizationPrimitives
     {
         private readonly object _locker = new object();
         private SpinLockHandler _spinLockHandler = new SpinLockHandler();
+        private bool _enteredMonitor;
 
-        public void Enter()
+        public HybridLock Enter()
         {
-            if (!Monitor.TryEnter(_locker))
+            _enteredMonitor = Monitor.TryEnter(_locker);
+            if (!_enteredMonitor)
             {
                 _spinLockHandler.Enter();
             }
+
+            return new HybridLock(this);
         }
 
         public void Exit()
         {
-            if (Monitor.IsEntered(_locker))
+            if (_enteredMonitor)
             {
                 Monitor.Exit(_locker);
+                _enteredMonitor = false;
             }
             else
             {
@@ -27,15 +33,32 @@ namespace CustomSynchronizationPrimitives.SynchronizationPrimitives
             }
         }
 
-        public bool TryEnter(int timeout)
+        public HybridLock TryEnter(int timeout)
         {
-            if (Monitor.TryEnter(_locker))
+            _enteredMonitor = Monitor.TryEnter(_locker, timeout);
+            if (_enteredMonitor)
             {
-                return true;
+                if (!_spinLockHandler.TryEnter(timeout))
+                {
+                    throw new TimeoutException();
+                }
             }
-            else
+
+            return new HybridLock(this);
+        }
+
+        public struct HybridLock : IDisposable
+        {
+            private readonly HybridLockHandler _lockHandler;
+
+            public HybridLock(HybridLockHandler lockHandler)
             {
-                return _spinLockHandler.TryEnter(timeout);
+                _lockHandler = lockHandler;
+            }
+
+            public void Dispose()
+            {
+                _lockHandler.Exit();
             }
         }
     }
